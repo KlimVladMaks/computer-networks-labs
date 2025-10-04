@@ -428,4 +428,32 @@ listen postgres
 В рамках данного задания были продемонстрированы два свойства созданного нами БД-кластера:
 
 - При выключение узла `pg-master`, который являлся лидером кластера, БД-кластер всё-равно продолжает свою работу за счёт того, что лидером кластера становится второй узел `pg-slave` (который до этого выступал в роли реплики), который занимает место `pg-master` в рамках entrypoint-подключение, благодаря чему пользователь может обращаться к БД-кластеру по тому же адресу что и раньше.
-- При повторном подключении `pg-master` вновь становится лидером кластера и получает все те изменения, которые были записаны в БД в его отсутствие.
+- При повторном подключении `pg-master` вновь становится лидером кластера и получает все те изменения, которые были записаны в БД в его отсутствие. Это происходит благодаря тому, что в настройках обоих PostgreSQL-узлов указаны соответствующие параметры в разделе `bootstrap`, которые и реализуют функционал синхронизации:
+
+postgres0.yml; postgres1.yml
+```yaml
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 10485760
+    master_start_timeout: 300
+    synchronous_mode: true
+  postgresql:
+    use_pg_rewind: true
+    use_slots: true
+    parameters:
+      wal_level: replica
+      hot_standby: "on"
+      wal_keep_segments: 8
+      max_wal_senders: 10
+      max_replication_slots: 10
+      wal_log_hints: "on"
+      archive_mode: "always"
+      archive_timeout: 1800s
+      archive_command: mkdir -p /tmp/wal_archive && test ! -f /tmp/wal_archive/%f && cp %p /tmp/wal_archive/%f
+  pg_hba:
+    - host replication replicator 0.0.0.0/0 md5
+    - host all all 0.0.0.0/0 md5
+```
